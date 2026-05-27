@@ -7,58 +7,46 @@ env:
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Build mode (ui or cli)"
+        required: true
+        default: "ui"
+        type: choice
+        options:
+          - ui
+          - cli
+
       platform:
-        description: "Platform"
+        description: "Platform (UI mode only)"
         required: true
         default: "macos-latest"
         type: choice
         options:
-          - "windows-latest"
-          - "macos-latest"
-          - "ubuntu-24.04"
+          - macos-latest
+          - windows-latest
+          - ubuntu-24.04
+
       url:
-        description: "Website URL"
-        required: true
+        description: "Website URL (UI mode)"
+        required: false
+
       name:
-        description: "App name (lowercase for Linux)"
-        required: true
-      icon:
-        description: "Icon URL, auto-fetch if empty"
+        description: "App name (UI mode)"
         required: false
-      width:
-        description: "Window width (px)"
+
+      version:
+        description: "Version (UI mode)"
         required: false
-        default: "1200"
-      height:
-        description: "Window height (px)"
+        default: "dev"
+
+      cli_command:
+        description: "FULL CLI command (CLI mode only)"
         required: false
-        default: "780"
-      fullscreen:
-        description: "Start in fullscreen mode"
-        required: false
-        type: boolean
-        default: false
-      hide_title_bar:
-        description: "Hide title bar (macOS only)"
-        required: false
-        type: boolean
-        default: false
-      multi_arch:
-        description: "Universal binary (macOS only)"
-        required: false
-        type: boolean
-        default: false
-      targets:
-        description: "Package formats (comma-separated: deb,appimage,rpm)"
-        required: false
-        default: "deb"
 
 jobs:
   build:
-    name: ${{ inputs.platform }}
+    name: Build (${{ inputs.platform }})
     runs-on: ${{ inputs.platform }}
-    strategy:
-      fail-fast: false
 
     steps:
       - name: Checkout repository
@@ -66,145 +54,88 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
 
-      - name: Setup Node.js Environment
-        uses: ./.github/actions/setup-env
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          mode: build
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install pnpm
+        run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install
 
       - name: Build CLI
         run: pnpm run cli:build
 
-      - name: Setup mold linker
+      - name: Setup mold (Linux only)
         if: runner.os == 'Linux'
         uses: rui314/setup-mold@v1
 
-      - name: Rust cache restore
-        uses: actions/cache/restore@v4.2.0
-        id: cache_store
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            src-tauri/target/
-          key: ${{ runner.os }}-cargo-pake-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build App (Linux/macOS)
-        if: runner.os != 'Windows'
-        timeout-minutes: 25
+      - name: Build App
         shell: bash
         run: |
-          ARGS=("${{ inputs.url }}" "--name" "${{ inputs.name }}")
+          echo "Mode: ${{ inputs.mode }}"
+          echo "Platform: ${{ inputs.platform }}"
 
-          if [ -n "${{ inputs.icon }}" ]; then
-            ARGS+=("--icon" "${{ inputs.icon }}")
+          # -------------------------
+          # CLI MODE (POWER USER)
+          # -------------------------
+          if [ "${{ inputs.mode }}" == "cli" ]; then
+            echo "🚀 Running CLI mode"
+
+            if [ -z "${{ inputs.cli_command }}" ]; then
+              echo "ERROR: cli_command is empty"
+              exit 1
+            fi
+
+            echo "Running: ${{ inputs.cli_command }}"
+            eval "${{ inputs.cli_command }}"
+            exit 0
           fi
 
-          if [ -n "${{ inputs.width }}" ]; then
-            ARGS+=("--width" "${{ inputs.width }}")
+          # -------------------------
+          # UI MODE (DEFAULT)
+          # -------------------------
+          echo "🧩 Running UI mode"
+
+          if [ -z "${{ inputs.url }}" ] || [ -z "${{ inputs.name }}" ]; then
+            echo "ERROR: url and name are required in UI mode"
+            exit 1
           fi
 
-          if [ -n "${{ inputs.height }}" ]; then
-            ARGS+=("--height" "${{ inputs.height }}")
-          fi
+          node dist/cli.js \
+            "${{ inputs.url }}" \
+            --name "${{ inputs.name }}-${{ inputs.version }}" \
+            --width 1200 \
+            --height 780
 
-          if [ "${{ inputs.fullscreen }}" == "true" ]; then
-            ARGS+=("--fullscreen")
-          fi
+      # -------------------------
+      # ARTIFACTS
+      # -------------------------
 
-          if [ "${{ inputs.hide_title_bar }}" == "true" ]; then
-            ARGS+=("--hide-title-bar")
-          fi
-
-          if [ "${{ inputs.multi_arch }}" == "true" ]; then
-            ARGS+=("--multi-arch")
-          fi
-
-          if [ -n "${{ inputs.targets }}" ] && [ "${{ runner.os }}" == "Linux" ]; then
-            ARGS+=("--targets" "${{ inputs.targets }}")
-          fi
-
-          echo "Running: node dist/cli.js ${ARGS[@]}"
-          node dist/cli.js "${ARGS[@]}"
-
-      - name: Build App (Windows)
-        if: runner.os == 'Windows'
-        timeout-minutes: 25
-        shell: pwsh
-        run: |
-          $args = "${{ inputs.url }}", "--name", "${{ inputs.name }}"
-
-          if ("${{ inputs.icon }}" -ne "") {
-            $args += "--icon", "${{ inputs.icon }}"
-          }
-
-          if ("${{ inputs.width }}" -ne "") {
-            $args += "--width", "${{ inputs.width }}"
-          }
-
-          if ("${{ inputs.height }}" -ne "") {
-            $args += "--height", "${{ inputs.height }}"
-          }
-
-          if ("${{ inputs.fullscreen }}" -eq "true") {
-            $args += "--fullscreen"
-          }
-
-          if ("${{ inputs.hide_title_bar }}" -eq "true") {
-            $args += "--hide-title-bar"
-          }
-
-          Write-Host "Running: node dist/cli.js $($args -join ' ')"
-          node dist/cli.js $args
-
-          git checkout -- src-tauri/Cargo.lock
-
-      - name: Upload DMG (macOS)
+      - name: Upload macOS artifact
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.name }}-macOS
-          path: ${{ inputs.name }}.dmg
-          retention-days: 3
-
-      - name: Upload DEB (Linux)
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ inputs.name }}-Linux-deb
-          path: ${{ inputs.name }}.deb
-          retention-days: 3
-          if-no-files-found: ignore
-
-      - name: Upload AppImage (Linux)
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ inputs.name }}-Linux-AppImage
-          path: ${{ inputs.name }}.AppImage
-          retention-days: 3
-          if-no-files-found: ignore
-
-      - name: Upload MSI (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ inputs.name }}-Windows
-          path: ${{ inputs.name }}.msi
-          retention-days: 3
-
-      - name: Rust cache store
-        uses: actions/cache/save@v4.2.0
-        if: steps.cache_store.outputs.cache-hit != 'true'
-        with:
+          name: app-macos
           path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            src-tauri/target/
-          key: ${{ runner.os }}-cargo-pake-${{ hashFiles('**/Cargo.lock') }}
+            *.dmg
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-windows
+          path: |
+            *.msi
+
+      - name: Upload Linux artifacts
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-linux
+          path: |
+            *.AppImage
+            *.deb
