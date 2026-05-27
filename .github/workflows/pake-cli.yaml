@@ -1,37 +1,67 @@
-name: Pake Command Runner (Single Input)
+name: Pake Command Runner (OS + Command)
 
 on:
   workflow_dispatch:
     inputs:
+      os:
+        description: "Target OS"
+        required: true
+        default: "macos-latest"
+        type: choice
+        options:
+          - macos-latest
+          - windows-latest
+          - ubuntu-24.04
+
       command:
-        description: "Paste FULL command here (cli or pake)"
+        description: "Paste FULL command (pake or node cli)"
         required: true
 
 jobs:
   run:
-    runs-on: macos-latest
+    name: Run (${{ inputs.os }})
+    runs-on: ${{ inputs.os }}
 
     steps:
-      - name: Checkout
+      # -----------------------
+      # Checkout (optional but safe)
+      # -----------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # -----------------------
+      # Node setup (for CLI builds)
+      # -----------------------
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      # Install BOTH tools so command always works
-      - name: Enable npm tools
+      # -----------------------
+      # Install PAKE globally (npm ONLY as requested)
+      # -----------------------
+      - name: Install Pake CLI
+        run: npm install -g pake-cli
+
+      # -----------------------
+      # Debug
+      # -----------------------
+      - name: Debug environment
         run: |
-          npm install -g pake-cli
+          echo "OS: ${{ inputs.os }}"
+          node -v
+          npm -v
+          which pake || echo "pake installed via npm"
 
-      - name: Show command
-        run: echo "${{ inputs.command }}"
-
-      - name: Run command
+      # -----------------------
+      # RUN COMMAND
+      # -----------------------
+      - name: Execute command
         shell: bash
         run: |
           set -e
 
-          echo "Executing raw command..."
+          echo "Running command:"
+          echo "${{ inputs.command }}"
+
           bash -c "${{ inputs.command }}"
