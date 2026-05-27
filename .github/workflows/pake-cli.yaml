@@ -1,4 +1,4 @@
-name: Pake Command Runner (OS + Command)
+name: Pake Command Runner (OS + Artifact Output)
 
 on:
   workflow_dispatch:
@@ -14,23 +14,23 @@ on:
           - ubuntu-24.04
 
       command:
-        description: "Paste FULL command (pake or node cli)"
+        description: "FULL command (pake or node cli)"
         required: true
 
 jobs:
-  run:
-    name: Run (${{ inputs.os }})
+  build:
+    name: Build (${{ inputs.os }})
     runs-on: ${{ inputs.os }}
 
     steps:
       # -----------------------
-      # Checkout (optional but safe)
+      # Checkout (safe default)
       # -----------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
       # -----------------------
-      # Node setup (for CLI builds)
+      # Node.js
       # -----------------------
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -38,7 +38,7 @@ jobs:
           node-version: 24
 
       # -----------------------
-      # Install PAKE globally (npm ONLY as requested)
+      # Install Pake (npm ONLY)
       # -----------------------
       - name: Install Pake CLI
         run: npm install -g pake-cli
@@ -48,15 +48,14 @@ jobs:
       # -----------------------
       - name: Debug environment
         run: |
-          echo "OS: ${{ inputs.os }}"
           node -v
           npm -v
-          which pake || echo "pake installed via npm"
+          which pake || echo "pake installed"
 
       # -----------------------
-      # RUN COMMAND
+      # Run build command
       # -----------------------
-      - name: Execute command
+      - name: Run build command
         shell: bash
         run: |
           set -e
@@ -65,3 +64,34 @@ jobs:
           echo "${{ inputs.command }}"
 
           bash -c "${{ inputs.command }}"
+
+      # -----------------------
+      # Collect output files
+      # -----------------------
+      - name: Locate build output
+        shell: bash
+        run: |
+          echo "Searching for build artifacts..."
+
+          find . -maxdepth 3 -type f \( \
+            -name "*.dmg" -o \
+            -name "*.msi" -o \
+            -name "*.AppImage" -o \
+            -name "*.deb" \
+          \) > artifacts.txt
+
+          echo "Found files:"
+          cat artifacts.txt || true
+
+      # -----------------------
+      # Upload artifacts (ALL OS)
+      # -----------------------
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pake-build-${{ inputs.os }}
+          path: |
+            *.dmg
+            *.msi
+            *.AppImage
+            *.deb
