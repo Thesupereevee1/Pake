@@ -1,19 +1,19 @@
-name: Build App With Pake CLI (Clean Stable)
+name: Build App With Pake CLI (CLI + PAKE Mode)
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Build mode"
+        description: "Mode: cli (your builder) or pake (official pake CLI)"
         required: true
-        default: "ui"
+        default: "cli"
         type: choice
         options:
-          - ui
           - cli
+          - pake
 
       platform:
-        description: "Platform"
+        description: "Target platform (UI only)"
         required: true
         default: "macos-latest"
         type: choice
@@ -23,25 +23,31 @@ on:
           - ubuntu-24.04
 
       url:
-        description: "Website URL (UI mode)"
-        required: false
+        description: "Website URL"
+        required: true
 
       name:
-        description: "App name (UI mode)"
-        required: false
+        description: "App name"
+        required: true
 
       version:
-        description: "Version (UI mode)"
+        description: "Version tag"
         required: false
         default: "dev"
 
-      cli_command:
-        description: "CLI args (CLI mode only, NO 'pake')"
+      width:
+        description: "Window width"
         required: false
+        default: "1200"
+
+      height:
+        description: "Window height"
+        required: false
+        default: "780"
 
 jobs:
   build:
-    name: Build (${{ inputs.platform }})
+    name: Build (${{ inputs.mode }} - ${{ inputs.platform }})
     runs-on: ${{ inputs.platform }}
 
     steps:
@@ -52,16 +58,15 @@ jobs:
         uses: actions/checkout@v4
 
       # -----------------------
-      # Node 24
+      # Node setup
       # -----------------------
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
 
       # -----------------------
-      # Enable Corepack (IMPORTANT ORDER FIX)
+      # Install pnpm (for your CLI build only)
       # -----------------------
       - name: Enable Corepack
         run: corepack enable
@@ -70,37 +75,42 @@ jobs:
         run: corepack prepare pnpm@10.26.2 --activate
 
       # -----------------------
-      # Rust toolchain
+      # Install Rust (needed for Pake builds)
       # -----------------------
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       # -----------------------
-      # Install dependencies
+      # Install dependencies (your repo CLI)
       # -----------------------
       - name: Install dependencies
+        if: inputs.mode == 'cli'
         run: pnpm install --frozen-lockfile
 
-      # -----------------------
-      # Build CLI
-      # -----------------------
       - name: Build CLI
+        if: inputs.mode == 'cli'
         run: pnpm run cli:build
 
       # -----------------------
-      # Debug output (prevents 127 guessing games)
+      # INSTALL PAKE VIA NPM (ONLY HERE)
       # -----------------------
-      - name: Debug build output
-        run: |
-          echo "Node version:"
-          node -v
-          echo "PNPM version:"
-          pnpm -v
-          echo "Dist output:"
-          ls -R dist || echo "dist missing"
+      - name: Install Pake CLI (npm only)
+        if: inputs.mode == 'pake'
+        run: npm install -g pake-cli
 
       # -----------------------
-      # Build App
+      # DEBUG
+      # -----------------------
+      - name: Debug environment
+        run: |
+          node -v
+          npm -v
+          which node
+          which npm
+          which pake || echo "pake not yet available (ok)"
+
+      # -----------------------
+      # RUN BUILD
       # -----------------------
       - name: Build App
         shell: bash
@@ -109,48 +119,45 @@ jobs:
 
           echo "Mode: ${{ inputs.mode }}"
           echo "Platform: ${{ inputs.platform }}"
+          echo "URL: ${{ inputs.url }}"
+          echo "Name: ${{ inputs.name }}"
 
           # -----------------------
-          # CLI MODE (SAFE)
+          # CLI MODE (your project)
           # -----------------------
           if [ "${{ inputs.mode }}" == "cli" ]; then
-            echo "🚀 CLI mode"
+            echo "🚀 Running internal CLI builder"
 
-            if [ -z "${{ inputs.cli_command }}" ]; then
-              echo "ERROR: cli_command is required"
+            if [ ! -f dist/cli.js ]; then
+              echo "ERROR: dist/cli.js not found"
               exit 1
             fi
 
-            echo "Running command:"
-            echo "${{ inputs.cli_command }}"
+            node dist/cli.js \
+              "${{ inputs.url }}" \
+              --name "${{ inputs.name }}-${{ inputs.version }}" \
+              --width "${{ inputs.width }}" \
+              --height "${{ inputs.height }}"
 
-            bash -c "${{ inputs.cli_command }}"
             exit 0
           fi
 
           # -----------------------
-          # UI MODE
+          # PAKE MODE (official CLI)
           # -----------------------
-          echo "🧩 UI mode"
+          if [ "${{ inputs.mode }}" == "pake" ]; then
+            echo "🚀 Running PAKE CLI (npm installed)"
 
-          if [ -z "${{ inputs.url }}" ] || [ -z "${{ inputs.name }}" ]; then
-            echo "ERROR: url and name required"
-            exit 1
+            pake "${{ inputs.url }}" \
+              --name "${{ inputs.name }}" \
+              --width "${{ inputs.width }}" \
+              --height "${{ inputs.height }}"
+
+            exit 0
           fi
-
-          if [ ! -f dist/cli.js ]; then
-            echo "ERROR: dist/cli.js not found (build failed)"
-            exit 1
-          fi
-
-          node dist/cli.js \
-            "${{ inputs.url }}" \
-            --name "${{ inputs.name }}-${{ inputs.version }}" \
-            --width 1200 \
-            --height 780
 
       # -----------------------
-      # Upload artifacts
+      # ARTIFACTS
       # -----------------------
       - name: Upload macOS
         if: runner.os == 'macOS'
