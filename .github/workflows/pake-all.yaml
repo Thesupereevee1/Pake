@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "PAKE command (leave empty for default)"
+        description: "PAKE command (optional full override)"
         required: false
         default: ""
 
@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
 
       # -----------------------
-      # Node + npm
+      # Node.js
       # -----------------------
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -33,15 +33,31 @@ jobs:
           node-version: 24
 
       # -----------------------
-      # Verify npm exists (comes with Node)
+      # Verify npm
       # -----------------------
-      - name: Verify npm
+      - name: Verify Node & npm
         run: |
           node -v
           npm -v
 
       # -----------------------
-      # Install Pake via npm ONLY
+      # Linux dependencies (FIX FOR YOUR ERROR)
+      # -----------------------
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # -----------------------
+      # Install Pake CLI (npm only)
       # -----------------------
       - name: Install Pake CLI
         run: npm install -g pake-cli
@@ -51,11 +67,12 @@ jobs:
       # -----------------------
       - name: Debug environment
         run: |
-          echo "Command input: ${{ inputs.command }}"
+          echo "OS: ${{ matrix.os }}"
+          echo "Command: ${{ inputs.command }}"
           pake -v || true
 
       # -----------------------
-      # Build app (default OR custom command)
+      # Build step
       # -----------------------
       - name: Build app
         shell: bash
@@ -63,34 +80,44 @@ jobs:
           set -e
 
           if [ -n "${{ inputs.command }}" ]; then
-            echo "🚀 Running custom command"
-            echo "${{ inputs.command }}"
-            bash -c "${{ inputs.command }}"
+            echo "🚀 Running custom PAKE command"
+
+            # IMPORTANT: run safely (no broken quoting issues)
+            bash -c '${{ inputs.command }}'
+
           else
             echo "🧩 Running default build"
 
             pake https://every-verse-counts.netlify.app \
               --name "EveryVerseCounts" \
+              --title "Every Verse Counts" \
               --width 1200 \
-              --height 780
+              --height 780 \
+              --keep-binary
           fi
 
       # -----------------------
-      # Upload artifacts per OS
+      # Upload artifacts
       # -----------------------
+
       - name: Upload macOS artifact
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
-          path: "*.dmg"
+          path: |
+            *.dmg
+            *-binary
+            *.app
 
       - name: Upload Windows artifact
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: "*.msi"
+          path: |
+            *.msi
+            *.exe
 
       - name: Upload Linux artifact
         if: matrix.os == 'ubuntu-24.04'
@@ -100,3 +127,4 @@ jobs:
           path: |
             *.AppImage
             *.deb
+            *-binary
