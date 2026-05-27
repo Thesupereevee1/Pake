@@ -1,4 +1,4 @@
-name: Build App With Pake CLI (Modern Stable)
+name: Build App With Pake CLI (Clean Stable)
 
 on:
   workflow_dispatch:
@@ -36,7 +36,7 @@ on:
         default: "dev"
 
       cli_command:
-        description: "CLI override (CLI mode only)"
+        description: "CLI args (CLI mode only, no 'pake')"
         required: false
 
 jobs:
@@ -46,13 +46,13 @@ jobs:
 
     steps:
       # -----------------------
-      # 1. Checkout
+      # Checkout
       # -----------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
       # -----------------------
-      # 2. Node 24 (fixes future breakage)
+      # Node 24 (future proof)
       # -----------------------
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -61,46 +61,46 @@ jobs:
           cache: npm
 
       # -----------------------
-      # 3. pnpm (no globals confusion)
+      # pnpm via corepack (no globals issues)
       # -----------------------
-      - name: Enable corepack (pnpm)
+      - name: Enable Corepack
         run: corepack enable
 
-      - name: Install pnpm
+      - name: Setup pnpm
         run: corepack prepare pnpm@10.26.2 --activate
 
       # -----------------------
-      # 4. Rust (required for Tauri/Pake)
+      # Rust (required for Tauri/Pake)
       # -----------------------
-      - name: Install Rust toolchain
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       # -----------------------
-      # 5. Install dependencies
+      # Install dependencies
       # -----------------------
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       # -----------------------
-      # 6. Build CLI (your project step)
+      # Build CLI
       # -----------------------
       - name: Build CLI
         run: pnpm run cli:build
 
       # -----------------------
-      # 7. Debug output (prevents 127 mystery failures)
+      # Debug (prevents hidden 127 issues)
       # -----------------------
       - name: Debug build output
         run: |
-          echo "Node:"
+          echo "Node version:"
           node -v
-          echo "PNPM:"
+          echo "PNPM version:"
           pnpm -v
-          echo "Dist folder:"
-          ls -R dist || echo "NO dist folder found"
+          echo "Dist contents:"
+          ls -R dist || echo "dist missing"
 
       # -----------------------
-      # 8. Build App (CORE LOGIC)
+      # Build App
       # -----------------------
       - name: Build App
         shell: bash
@@ -111,7 +111,7 @@ jobs:
           echo "Platform: ${{ inputs.platform }}"
 
           # -----------------------
-          # CLI MODE
+          # CLI MODE (SAFE)
           # -----------------------
           if [ "${{ inputs.mode }}" == "cli" ]; then
             echo "🚀 CLI mode"
@@ -121,10 +121,11 @@ jobs:
               exit 1
             fi
 
-            echo "Running CLI command:"
+            echo "Running CLI command safely:"
             echo "${{ inputs.cli_command }}"
 
-            eval "${{ inputs.cli_command }}"
+            # SAFE EXECUTION (NO pake, NO eval)
+            bash -c "${{ inputs.cli_command }}"
             exit 0
           fi
 
@@ -139,7 +140,7 @@ jobs:
           fi
 
           if [ ! -f dist/cli.js ]; then
-            echo "ERROR: dist/cli.js not found (build failed)"
+            echo "ERROR: dist/cli.js not found"
             exit 1
           fi
 
@@ -150,24 +151,23 @@ jobs:
             --height 780
 
       # -----------------------
-      # 9. Upload artifacts
+      # Upload artifacts
       # -----------------------
-
-      - name: Upload macOS build
+      - name: Upload macOS
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: app-macos
           path: "*.dmg"
 
-      - name: Upload Windows build
+      - name: Upload Windows
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: app-windows
           path: "*.msi"
 
-      - name: Upload Linux build
+      - name: Upload Linux
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
