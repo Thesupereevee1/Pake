@@ -1,14 +1,10 @@
-name: Build App With Pake CLI
-
-env:
-  NODE_VERSION: "22"
-  PNPM_VERSION: "10.26.2"
+name: Build App With Pake CLI (Modern Stable)
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Build mode (ui or cli)"
+        description: "Build mode"
         required: true
         default: "ui"
         type: choice
@@ -17,7 +13,7 @@ on:
           - cli
 
       platform:
-        description: "Platform (UI mode only)"
+        description: "Platform"
         required: true
         default: "macos-latest"
         type: choice
@@ -40,7 +36,7 @@ on:
         default: "dev"
 
       cli_command:
-        description: "FULL CLI command (CLI mode only)"
+        description: "CLI override (CLI mode only)"
         required: false
 
 jobs:
@@ -49,59 +45,101 @@ jobs:
     runs-on: ${{ inputs.platform }}
 
     steps:
+      # -----------------------
+      # 1. Checkout
+      # -----------------------
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup Node.js
+      # -----------------------
+      # 2. Node 24 (fixes future breakage)
+      # -----------------------
+      - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 24
+          cache: npm
+
+      # -----------------------
+      # 3. pnpm (no globals confusion)
+      # -----------------------
+      - name: Enable corepack (pnpm)
+        run: corepack enable
 
       - name: Install pnpm
-        run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+        run: corepack prepare pnpm@10.26.2 --activate
 
+      # -----------------------
+      # 4. Rust (required for Tauri/Pake)
+      # -----------------------
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # -----------------------
+      # 5. Install dependencies
+      # -----------------------
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
+      # -----------------------
+      # 6. Build CLI (your project step)
+      # -----------------------
       - name: Build CLI
         run: pnpm run cli:build
 
-      - name: Setup mold (Linux only)
-        if: runner.os == 'Linux'
-        uses: rui314/setup-mold@v1
+      # -----------------------
+      # 7. Debug output (prevents 127 mystery failures)
+      # -----------------------
+      - name: Debug build output
+        run: |
+          echo "Node:"
+          node -v
+          echo "PNPM:"
+          pnpm -v
+          echo "Dist folder:"
+          ls -R dist || echo "NO dist folder found"
 
+      # -----------------------
+      # 8. Build App (CORE LOGIC)
+      # -----------------------
       - name: Build App
         shell: bash
         run: |
+          set -e
+
           echo "Mode: ${{ inputs.mode }}"
           echo "Platform: ${{ inputs.platform }}"
 
-          # -------------------------
-          # CLI MODE (POWER USER)
-          # -------------------------
+          # -----------------------
+          # CLI MODE
+          # -----------------------
           if [ "${{ inputs.mode }}" == "cli" ]; then
-            echo "🚀 Running CLI mode"
+            echo "🚀 CLI mode"
 
             if [ -z "${{ inputs.cli_command }}" ]; then
-              echo "ERROR: cli_command is empty"
+              echo "ERROR: cli_command is required"
               exit 1
             fi
 
-            echo "Running: ${{ inputs.cli_command }}"
+            echo "Running CLI command:"
+            echo "${{ inputs.cli_command }}"
+
             eval "${{ inputs.cli_command }}"
             exit 0
           fi
 
-          # -------------------------
-          # UI MODE (DEFAULT)
-          # -------------------------
-          echo "🧩 Running UI mode"
+          # -----------------------
+          # UI MODE
+          # -----------------------
+          echo "🧩 UI mode"
 
           if [ -z "${{ inputs.url }}" ] || [ -z "${{ inputs.name }}" ]; then
-            echo "ERROR: url and name are required in UI mode"
+            echo "ERROR: url and name required"
+            exit 1
+          fi
+
+          if [ ! -f dist/cli.js ]; then
+            echo "ERROR: dist/cli.js not found (build failed)"
             exit 1
           fi
 
@@ -111,27 +149,25 @@ jobs:
             --width 1200 \
             --height 780
 
-      # -------------------------
-      # ARTIFACTS
-      # -------------------------
+      # -----------------------
+      # 9. Upload artifacts
+      # -----------------------
 
-      - name: Upload macOS artifact
+      - name: Upload macOS build
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: app-macos
-          path: |
-            *.dmg
+          path: "*.dmg"
 
-      - name: Upload Windows artifact
+      - name: Upload Windows build
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: app-windows
-          path: |
-            *.msi
+          path: "*.msi"
 
-      - name: Upload Linux artifacts
+      - name: Upload Linux build
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
