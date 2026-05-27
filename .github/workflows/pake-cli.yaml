@@ -1,183 +1,37 @@
-name: Build App With Pake CLI (CLI + PAKE Mode)
+name: Pake Command Runner (Single Input)
 
 on:
   workflow_dispatch:
     inputs:
-      mode:
-        description: "Mode: cli (your builder) or pake (official pake CLI)"
+      command:
+        description: "Paste FULL command here (cli or pake)"
         required: true
-        default: "cli"
-        type: choice
-        options:
-          - cli
-          - pake
-
-      platform:
-        description: "Target platform (UI only)"
-        required: true
-        default: "macos-latest"
-        type: choice
-        options:
-          - macos-latest
-          - windows-latest
-          - ubuntu-24.04
-
-      url:
-        description: "Website URL"
-        required: true
-
-      name:
-        description: "App name"
-        required: true
-
-      version:
-        description: "Version tag"
-        required: false
-        default: "dev"
-
-      width:
-        description: "Window width"
-        required: false
-        default: "1200"
-
-      height:
-        description: "Window height"
-        required: false
-        default: "780"
 
 jobs:
-  build:
-    name: Build (${{ inputs.mode }} - ${{ inputs.platform }})
-    runs-on: ${{ inputs.platform }}
+  run:
+    runs-on: macos-latest
 
     steps:
-      # -----------------------
-      # Checkout
-      # -----------------------
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # -----------------------
-      # Node setup
-      # -----------------------
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      # -----------------------
-      # Install pnpm (for your CLI build only)
-      # -----------------------
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Activate pnpm
-        run: corepack prepare pnpm@10.26.2 --activate
-
-      # -----------------------
-      # Install Rust (needed for Pake builds)
-      # -----------------------
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      # -----------------------
-      # Install dependencies (your repo CLI)
-      # -----------------------
-      - name: Install dependencies
-        if: inputs.mode == 'cli'
-        run: pnpm install --frozen-lockfile
-
-      - name: Build CLI
-        if: inputs.mode == 'cli'
-        run: pnpm run cli:build
-
-      # -----------------------
-      # INSTALL PAKE VIA NPM (ONLY HERE)
-      # -----------------------
-      - name: Install Pake CLI (npm only)
-        if: inputs.mode == 'pake'
-        run: npm install -g pake-cli
-
-      # -----------------------
-      # DEBUG
-      # -----------------------
-      - name: Debug environment
+      # Install BOTH tools so command always works
+      - name: Enable npm tools
         run: |
-          node -v
-          npm -v
-          which node
-          which npm
-          which pake || echo "pake not yet available (ok)"
+          npm install -g pake-cli
 
-      # -----------------------
-      # RUN BUILD
-      # -----------------------
-      - name: Build App
+      - name: Show command
+        run: echo "${{ inputs.command }}"
+
+      - name: Run command
         shell: bash
         run: |
           set -e
 
-          echo "Mode: ${{ inputs.mode }}"
-          echo "Platform: ${{ inputs.platform }}"
-          echo "URL: ${{ inputs.url }}"
-          echo "Name: ${{ inputs.name }}"
-
-          # -----------------------
-          # CLI MODE (your project)
-          # -----------------------
-          if [ "${{ inputs.mode }}" == "cli" ]; then
-            echo "🚀 Running internal CLI builder"
-
-            if [ ! -f dist/cli.js ]; then
-              echo "ERROR: dist/cli.js not found"
-              exit 1
-            fi
-
-            node dist/cli.js \
-              "${{ inputs.url }}" \
-              --name "${{ inputs.name }}-${{ inputs.version }}" \
-              --width "${{ inputs.width }}" \
-              --height "${{ inputs.height }}"
-
-            exit 0
-          fi
-
-          # -----------------------
-          # PAKE MODE (official CLI)
-          # -----------------------
-          if [ "${{ inputs.mode }}" == "pake" ]; then
-            echo "🚀 Running PAKE CLI (npm installed)"
-
-            pake "${{ inputs.url }}" \
-              --name "${{ inputs.name }}" \
-              --width "${{ inputs.width }}" \
-              --height "${{ inputs.height }}"
-
-            exit 0
-          fi
-
-      # -----------------------
-      # ARTIFACTS
-      # -----------------------
-      - name: Upload macOS
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-macos
-          path: "*.dmg"
-
-      - name: Upload Windows
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-windows
-          path: "*.msi"
-
-      - name: Upload Linux
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-linux
-          path: |
-            *.AppImage
-            *.deb
+          echo "Executing raw command..."
+          bash -c "${{ inputs.command }}"
