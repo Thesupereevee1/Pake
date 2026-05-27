@@ -2,6 +2,11 @@ name: Build Pake App (All Platforms)
 
 on:
   workflow_dispatch:
+    inputs:
+      command:
+        description: "PAKE command (leave empty for default)"
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -20,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
 
       # -----------------------
-      # Node setup
+      # Node + npm
       # -----------------------
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
@@ -28,7 +33,15 @@ jobs:
           node-version: 24
 
       # -----------------------
-      # Install Pake (npm ONLY)
+      # Verify npm exists (comes with Node)
+      # -----------------------
+      - name: Verify npm
+        run: |
+          node -v
+          npm -v
+
+      # -----------------------
+      # Install Pake via npm ONLY
       # -----------------------
       - name: Install Pake CLI
         run: npm install -g pake-cli
@@ -38,22 +51,29 @@ jobs:
       # -----------------------
       - name: Debug environment
         run: |
-          node -v
-          npm -v
+          echo "Command input: ${{ inputs.command }}"
           pake -v || true
 
       # -----------------------
-      # Build command (edit this once)
+      # Build app (default OR custom command)
       # -----------------------
       - name: Build app
         shell: bash
         run: |
           set -e
 
-          pake https://every-verse-counts.netlify.app \
-            --name "EveryVerseCounts" \
-            --width 1200 \
-            --height 780
+          if [ -n "${{ inputs.command }}" ]; then
+            echo "🚀 Running custom command"
+            echo "${{ inputs.command }}"
+            bash -c "${{ inputs.command }}"
+          else
+            echo "🧩 Running default build"
+
+            pake https://every-verse-counts.netlify.app \
+              --name "EveryVerseCounts" \
+              --width 1200 \
+              --height 780
+          fi
 
       # -----------------------
       # Upload artifacts per OS
