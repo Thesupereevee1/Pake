@@ -1,0 +1,241 @@
+name: Pake Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: "Pake command (without the 'pake' at the beginning)"
+        required: true
+        type: string
+        placeholder: "https://github.com --name GitHub"
+
+      windows:
+        description: "Build for Windows"
+        required: false
+        type: boolean
+        default: true
+
+      macos:
+        description: "Build for macOS"
+        required: false
+        type: boolean
+        default: true
+
+      linux:
+        description: "Build for Linux"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  prepare:
+    name: Select platforms
+    runs-on: ubuntu-latest
+
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+    steps:
+      - name: Create build matrix
+        id: matrix
+        shell: bash
+        run: |
+          platforms=""
+
+          if [[ "${{ inputs.windows }}" == "true" ]]; then
+            platforms="${platforms}{\"os\":\"windows-latest\",\"name\":\"Windows\"},"
+          fi
+
+          if [[ "${{ inputs.macos }}" == "true" ]]; then
+            platforms="${platforms}{\"os\":\"macos-latest\",\"name\":\"macOS\"},"
+          fi
+
+          if [[ "${{ inputs.linux }}" == "true" ]]; then
+            platforms="${platforms}{\"os\":\"ubuntu-24.04\",\"name\":\"Linux\"},"
+          fi
+
+          # Remove trailing comma
+          platforms="${platforms%,}"
+
+          if [[ -z "$platforms" ]]; then
+            echo "You must select at least one platform."
+            exit 1
+          fi
+
+          matrix="{\"include\":[${platforms}]}"
+
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+          echo "Build matrix:"
+          echo "$matrix"
+
+  build:
+    name: Build ${{ matrix.name }}
+
+    needs: prepare
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+
+    steps:
+      # ------------------------------------------------------------
+      # Checkout
+      # ------------------------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # ------------------------------------------------------------
+      # Node.js
+      # ------------------------------------------------------------
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      # ------------------------------------------------------------
+      # Rust
+      # ------------------------------------------------------------
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # ------------------------------------------------------------
+      # Linux dependencies
+      # ------------------------------------------------------------
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      # ------------------------------------------------------------
+      # Install Pake
+      # ------------------------------------------------------------
+
+      - name: Install Pake CLI
+        shell: bash
+        run: |
+          npm install -g pake-cli
+
+          echo "Pake version:"
+          pake --version
+
+      # ------------------------------------------------------------
+      # Build
+      # ------------------------------------------------------------
+
+      - name: Run Pake - Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          PAKE_COMMAND: ${{ inputs.command }}
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "Building with Pake"
+          echo "Platform: ${{ matrix.name }}"
+          echo "========================================"
+
+          echo ""
+          echo "Command:"
+          echo "pake $PAKE_COMMAND"
+          echo ""
+
+          pake $PAKE_COMMAND
+
+      - name: Run Pake - Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PAKE_COMMAND: ${{ inputs.command }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "========================================"
+          Write-Host "Building with Pake"
+          Write-Host "Platform: Windows"
+          Write-Host "========================================"
+
+          Write-Host ""
+          Write-Host "Command:"
+          Write-Host "pake $env:PAKE_COMMAND"
+          Write-Host ""
+
+          Invoke-Expression "pake $env:PAKE_COMMAND"
+
+      # ------------------------------------------------------------
+      # Show output
+      # ------------------------------------------------------------
+
+      - name: Show build output
+        shell: bash
+        run: |
+          echo "Build directory:"
+          find . -maxdepth 3 -type f \
+            \( -name "*.exe" \
+            -o -name "*.msi" \
+            -o -name "*.dmg" \
+            -o -name "*.app" \
+            -o -name "*.deb" \
+            -o -name "*.rpm" \
+            -o -name "*.AppImage" \
+            -o -name "*.pkg" \
+            -o -name "*.tar.gz" \
+            \) -print || true
+
+      # ------------------------------------------------------------
+      # Upload EVERYTHING produced by Pake
+      # ------------------------------------------------------------
+
+      - name: Upload Windows build
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v6
+        with:
+          name: Pake-Windows
+          path: |
+            **/*.exe
+            **/*.msi
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload macOS build
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v6
+        with:
+          name: Pake-macOS
+          path: |
+            **/*.dmg
+            **/*.app
+            **/*.pkg
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Linux build
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: Pake-Linux
+          path: |
+            **/*.AppImage
+            **/*.deb
+            **/*.rpm
+            **/*.pkg.tar.zst
+          if-no-files-found: warn
+          retention-days: 7
