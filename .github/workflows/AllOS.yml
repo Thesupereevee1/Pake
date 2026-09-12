@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: "Pake command (without the 'pake' at the beginning)"
+        description: "Pake command (without 'pake')"
         required: true
         type: string
-        placeholder: "https://github.com --name GitHub"
+        default: "https://oplolabs.github.io/TowelWrap/ --name TowelWrap --keep-binaries"
 
       windows:
         description: "Build for Windows"
@@ -27,88 +27,151 @@ on:
         type: boolean
         default: true
 
+
+# ============================================================
+# WINDOWS
+# ============================================================
+
 jobs:
-  prepare:
-    name: Select platforms
-    runs-on: ubuntu-latest
-
-    outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
+  windows:
+    name: Build Windows
+    if: ${{ inputs.windows }}
+    runs-on: windows-latest
 
     steps:
-      - name: Create build matrix
-        id: matrix
-        shell: bash
-        run: |
-          platforms=""
-
-          if [[ "${{ inputs.windows }}" == "true" ]]; then
-            platforms="${platforms}{\"os\":\"windows-latest\",\"name\":\"Windows\"},"
-          fi
-
-          if [[ "${{ inputs.macos }}" == "true" ]]; then
-            platforms="${platforms}{\"os\":\"macos-latest\",\"name\":\"macOS\"},"
-          fi
-
-          if [[ "${{ inputs.linux }}" == "true" ]]; then
-            platforms="${platforms}{\"os\":\"ubuntu-24.04\",\"name\":\"Linux\"},"
-          fi
-
-          # Remove trailing comma
-          platforms="${platforms%,}"
-
-          if [[ -z "$platforms" ]]; then
-            echo "You must select at least one platform."
-            exit 1
-          fi
-
-          matrix="{\"include\":[${platforms}]}"
-
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-
-          echo "Build matrix:"
-          echo "$matrix"
-
-  build:
-    name: Build ${{ matrix.name }}
-
-    needs: prepare
-
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-
-    steps:
-      # ------------------------------------------------------------
-      # Checkout
-      # ------------------------------------------------------------
-
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v6
-
-      # ------------------------------------------------------------
-      # Node.js
-      # ------------------------------------------------------------
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "22"
-
-      # ------------------------------------------------------------
-      # Rust
-      # ------------------------------------------------------------
+          node-version: 22
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # ------------------------------------------------------------
-      # Linux dependencies
-      # ------------------------------------------------------------
+      - name: Install Pake
+        shell: pwsh
+        run: |
+          npm install -g pake-cli
+
+          Write-Host ""
+          Write-Host "Pake version:"
+          pake --version
+
+      - name: Run Pake
+        shell: pwsh
+        env:
+          PAKE_COMMAND: ${{ inputs.command }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host ""
+          Write-Host "======================================"
+          Write-Host "Building TowelWrap"
+          Write-Host "Platform: Windows"
+          Write-Host "======================================"
+          Write-Host ""
+
+          Write-Host "pake $env:PAKE_COMMAND"
+          Write-Host ""
+
+          Invoke-Expression "pake $env:PAKE_COMMAND"
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v6
+        with:
+          name: TowelWrap-Windows
+          path: |
+            **/*.exe
+            **/*.msi
+          if-no-files-found: warn
+          retention-days: 7
+
+
+# ============================================================
+# MACOS
+# ============================================================
+
+  macos:
+    name: Build macOS
+    if: ${{ inputs.macos }}
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Pake
+        shell: bash
+        run: |
+          npm install -g pake-cli
+
+          echo ""
+          echo "Pake version:"
+          pake --version
+
+      - name: Run Pake
+        shell: bash
+        env:
+          PAKE_COMMAND: ${{ inputs.command }}
+        run: |
+          set -e
+
+          echo ""
+          echo "======================================"
+          echo "Building TowelWrap"
+          echo "Platform: macOS"
+          echo "======================================"
+          echo ""
+
+          echo "pake $PAKE_COMMAND"
+          echo ""
+
+          pake $PAKE_COMMAND
+
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v6
+        with:
+          name: TowelWrap-macOS
+          path: |
+            **/*.dmg
+            **/*.app
+            **/*.pkg
+          if-no-files-found: warn
+          retention-days: 7
+
+
+# ============================================================
+# LINUX
+# ============================================================
+
+  linux:
+    name: Build Linux
+    if: ${{ inputs.linux }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux dependencies
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           sudo apt-get update
@@ -124,118 +187,42 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
-      # ------------------------------------------------------------
-      # Install Pake
-      # ------------------------------------------------------------
-
-      - name: Install Pake CLI
+      - name: Install Pake
         shell: bash
         run: |
           npm install -g pake-cli
 
+          echo ""
           echo "Pake version:"
           pake --version
 
-      # ------------------------------------------------------------
-      # Build
-      # ------------------------------------------------------------
-
-      - name: Run Pake - Linux/macOS
-        if: runner.os != 'Windows'
+      - name: Run Pake
         shell: bash
         env:
           PAKE_COMMAND: ${{ inputs.command }}
         run: |
           set -e
 
-          echo "========================================"
-          echo "Building with Pake"
-          echo "Platform: ${{ matrix.name }}"
-          echo "========================================"
-
           echo ""
-          echo "Command:"
+          echo "======================================"
+          echo "Building TowelWrap"
+          echo "Platform: Linux"
+          echo "======================================"
+          echo ""
+
           echo "pake $PAKE_COMMAND"
           echo ""
 
           pake $PAKE_COMMAND
 
-      - name: Run Pake - Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          PAKE_COMMAND: ${{ inputs.command }}
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          Write-Host "========================================"
-          Write-Host "Building with Pake"
-          Write-Host "Platform: Windows"
-          Write-Host "========================================"
-
-          Write-Host ""
-          Write-Host "Command:"
-          Write-Host "pake $env:PAKE_COMMAND"
-          Write-Host ""
-
-          Invoke-Expression "pake $env:PAKE_COMMAND"
-
-      # ------------------------------------------------------------
-      # Show output
-      # ------------------------------------------------------------
-
-      - name: Show build output
-        shell: bash
-        run: |
-          echo "Build directory:"
-          find . -maxdepth 3 -type f \
-            \( -name "*.exe" \
-            -o -name "*.msi" \
-            -o -name "*.dmg" \
-            -o -name "*.app" \
-            -o -name "*.deb" \
-            -o -name "*.rpm" \
-            -o -name "*.AppImage" \
-            -o -name "*.pkg" \
-            -o -name "*.tar.gz" \
-            \) -print || true
-
-      # ------------------------------------------------------------
-      # Upload EVERYTHING produced by Pake
-      # ------------------------------------------------------------
-
-      - name: Upload Windows build
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v6
-        with:
-          name: Pake-Windows
-          path: |
-            **/*.exe
-            **/*.msi
-          if-no-files-found: warn
-          retention-days: 7
-
-      - name: Upload macOS build
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v6
-        with:
-          name: Pake-macOS
-          path: |
-            **/*.dmg
-            **/*.app
-            **/*.pkg
-          if-no-files-found: warn
-          retention-days: 7
-
       - name: Upload Linux build
-        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v6
         with:
-          name: Pake-Linux
+          name: TowelWrap-Linux
           path: |
             **/*.AppImage
             **/*.deb
             **/*.rpm
-            **/*.pkg.tar.zst
+            **/*.tar.gz
           if-no-files-found: warn
           retention-days: 7
