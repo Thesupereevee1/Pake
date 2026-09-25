@@ -83,7 +83,34 @@ impl MultiWindowState {
 
     fn next_window_label(&self) -> String {
         let index = self.next_window_index.fetch_add(1, Ordering::Relaxed) + 1;
-        format!("pake-{index}")
+        format!("{SECONDARY_WINDOW_LABEL_PREFIX}{index}")
+    }
+}
+
+/// Secondary windows (Cmd+N clones, `--new-window` popups, blank two-stage
+/// popups) take `pake-N` labels. `capabilities/default.json` must cover them
+/// with a matching glob: an uncovered label has every IPC call denied, so
+/// external links, downloads and toasts silently stop working there.
+const SECONDARY_WINDOW_LABEL_PREFIX: &str = "pake-";
+
+#[cfg(test)]
+mod capability_tests {
+    use super::SECONDARY_WINDOW_LABEL_PREFIX;
+
+    #[test]
+    fn the_capability_covers_secondary_window_labels() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../../capabilities/default.json"))
+                .expect("capabilities/default.json should be valid JSON");
+        let webviews: Vec<&str> = capability["webviews"]
+            .as_array()
+            .expect("the capability should list its webviews")
+            .iter()
+            .filter_map(|entry| entry.as_str())
+            .collect();
+
+        assert!(webviews.contains(&"pake"));
+        assert!(webviews.contains(&format!("{SECONDARY_WINDOW_LABEL_PREFIX}*").as_str()));
     }
 }
 
@@ -405,6 +432,27 @@ fn build_window(
         ))
     })?;
 
+    let restored_url = if label == "pake"
+        && window_config.url_type == "web"
+        && !window_config.incognito
+    {
+        match app.path().app_data_dir() {
+            Ok(directory) => match crate::util::read_last_url(&directory.join("last-url.txt")) {
+                Ok(url) => url,
+                Err(error) => {
+                    eprintln!("[Pake] Could not read the last URL: {error}");
+                    None
+                }
+            },
+            Err(error) => {
+                eprintln!("[Pake] Could not locate the last URL: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // On macOS both HTTP Basic auth and certificate bypass use the same
     // navigation-delegate proxy. Start on a neutral page so the proxy is in
     // place before the target can issue its first authentication challenge.
@@ -413,10 +461,14 @@ fn build_window(
         && window_config.url_type == "web"
         && (config.basic_auth || window_config.ignore_certificate_errors)
     {
-        Url::parse(&window_config.url).ok()
+        restored_url
+            .clone()
+            .or_else(|| Url::parse(&window_config.url).ok())
     } else {
         None
     };
+
+    let url = restored_url.map(WebviewUrl::External).unwrap_or(url);
 
     // The delegate must be installed before the first TLS challenge. Start on
     // a neutral page, then navigate from the with_webview callback below.
@@ -819,6 +871,20 @@ fn build_window(
     }
 
     Ok(window)
+}
+
+pub fn save_last_url(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("pake") else {
+        return;
+    };
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let path = app.path().app_data_dir()?.join("last-url.txt");
+        crate::util::write_last_url(&path, &window.url()?)?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("[Pake] Could not save the last URL: {error}");
+    }
 }
 
 #[cfg(all(test, target_os = "windows"))]

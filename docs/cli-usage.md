@@ -68,6 +68,8 @@ The packaged application will be located in the current working directory by def
 
 The URL is the link to the web page you want to package, the path to a local HTML file, or the path to a directory of static web files containing an `index.html` at its root (e.g. a `dist/` build output). Mandatory unless a `--config` file provides `url`.
 
+Web apps remember the main window’s full URL when closed or quit and reopen it on the next launch. The packaged URL remains the home address and is used when no saved URL is available. Incognito apps and local HTML apps do not save or restore URLs.
+
 ```shell
 pake https://example.com --name Example
 pake ./page.html --name MyPage
@@ -356,6 +358,22 @@ Specify the build target architecture or format:
 - ARM64 support enables Pake apps to run on ARM-based Linux devices, including Linux phones (postmarketOS, Ubuntu Touch), Raspberry Pi, and other ARM64 Linux systems.
 - Use `--target appimage-arm64` for portable ARM64 applications that work across different ARM64 Linux distributions.
 - Use `--targets zst` on Arch Linux based distributions to produce a `.pkg.tar.zst` package directly. Pake follows Tauri's AUR packaging guidance by building the Linux package payload first, then emitting Arch package metadata and zstd-compressed output. Requires `binutils` (for `ar`) and `libarchive` (for `bsdtar`).
+
+#### [windows-toolchain]
+
+Select the Rust toolchain used for Windows builds. Windows only; ignored on other platforms.
+
+- `msvc` (default): Tauri's recommended toolchain. Requires [Visual Studio Build Tools](https://tauri.app/start/prerequisites/#windows) with the "Desktop development with C++" workload.
+- `gnu`: builds against a MinGW/MSYS2 toolchain instead, for machines that have Rust and a GNU toolchain (e.g. via [MSYS2](https://www.msys2.org/)) but not Visual Studio Build Tools. Only `x64` is supported (MSYS2 does not ship an ARM64 GCC toolchain for this target). Requires `gcc`, `ld` and `dlltool` on `PATH`.
+
+```shell
+--windows-toolchain <msvc|gnu>
+
+# Example: build with MinGW/MSYS2 instead of MSVC
+--windows-toolchain gnu
+```
+
+If no MSVC Build Tools are detected and a GNU toolchain is available, Pake logs a hint to retry with `--windows-toolchain gnu` rather than failing deep in the build with an unexplained linker error. Requesting `gnu` does not change your default Rust toolchain or any global `rustup`/environment settings; it only affects the current build subprocess.
 
 #### [no-bundle]
 

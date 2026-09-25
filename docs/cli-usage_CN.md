@@ -68,6 +68,8 @@ pake [url] [options]
 
 `url` 是您需要打包的网页链接 🔗、本地 HTML 文件的路径，或包含根级 `index.html` 的静态文件目录（例如构建产物 `dist/`）。除非通过 `--config` 文件提供 `url`，此参数为必填。
 
+网页应用会在关闭或退出时记住主窗口的完整网址，下次启动时恢复；没有记录时打开打包网址，回到首页仍使用打包网址，隐身模式和本地 HTML 应用不保存或恢复网址。
+
 ```shell
 pake https://example.com --name Example
 pake ./page.html --name MyPage
@@ -354,6 +356,22 @@ pake https://github.com --name GitHub
 - ARM64 支持让 Pake 应用可以在基于 ARM 的 Linux 设备上运行，包括 Linux 手机（postmarketOS、Ubuntu Touch）、树莓派和其他 ARM64 Linux 系统。
 - 使用 `--target appimage-arm64` 可以创建便携式 ARM64 应用，在不同的 ARM64 Linux 发行版上运行。
 - 在基于 Arch Linux 的发行版上使用 `--targets zst` 可直接生成 `.pkg.tar.zst` 包。Pake 会按 Tauri 的 AUR 打包说明先生成 Linux 包内容，再写入 Arch 包元数据并输出 zstd 压缩包。需要预先安装 `binutils`（提供 `ar`）和 `libarchive`（提供 `bsdtar`）。
+
+#### [windows-toolchain]
+
+选择 Windows 构建使用的 Rust 工具链。仅适用于 Windows，其他平台忽略此选项。
+
+- `msvc`（默认）：Tauri 推荐的工具链，需要安装 [Visual Studio Build Tools](https://tauri.app/start/prerequisites/#windows)（勾选“使用 C++ 的桌面开发”工作负载）。
+- `gnu`：改用 MinGW/MSYS2 工具链构建，适合已安装 Rust 和 GNU 工具链（例如通过 [MSYS2](https://www.msys2.org/)）但没有安装 Visual Studio Build Tools 的机器。仅支持 `x64`（MSYS2 未提供该目标的 ARM64 GCC 工具链）。需要 `PATH` 中包含 `gcc`、`ld` 和 `dlltool`。
+
+```shell
+--windows-toolchain <msvc|gnu>
+
+# 示例：使用 MinGW/MSYS2 而非 MSVC 构建
+--windows-toolchain gnu
+```
+
+如果未检测到 MSVC Build Tools 但检测到可用的 GNU 工具链，Pake 会提示可以改用 `--windows-toolchain gnu` 重试，而不是让构建在链接阶段以难以理解的错误失败。使用 `gnu` 不会更改你的默认 Rust 工具链或任何全局 `rustup`/环境设置，仅影响当次构建子进程。
 
 #### [no-bundle]
 

@@ -308,7 +308,7 @@ PAKE_LINUX_WEBKIT_SAFE_MODE=1 ./MyApp.AppImage
 ```
 
 **Why This Happens:**
-Pake normally enables WebKitGTK workarounds that help blank-window cases on Linux, but those same flags can make input and window controls unreliable on some Wayland compositors. The `PAKE_LINUX_WEBKIT_SAFE_MODE` variable lets you choose the safer rendering mode for your compositor.
+With WebKitGTK 2.52 or later, on both X11 and Wayland, Pake uses shared-memory rendering (`WEBKIT_DMABUF_RENDERER_FORCE_SHM=1`) instead of disabling the renderer, preserving the hardware acceleration needed for video. Older WebKitGTK versions keep the existing compatibility flags; niri keeps native rendering. Explicit WebKit variables are respected. `PAKE_LINUX_WEBKIT_SAFE_MODE=1` selects the old conservative mode, while `0` removes the two disabling flags and skips automatic workarounds.
 
 ---
 
