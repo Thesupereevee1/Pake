@@ -7,7 +7,7 @@ on:
         description: "Pake command (without 'pake')"
         required: true
         type: string
-        default: "https://oplolabs.github.io/TowelWrap/ --name TowelWrap --keep-binaries"
+        default: "https://oplolabs.github.io/TowelWrap/ --name TowelWrap --keep-binary"
 
       windows:
         description: "Build for Windows"
